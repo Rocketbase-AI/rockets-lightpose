@@ -1,0 +1,24 @@
+{
+  "username": "heiki",
+  "modelName": "lightpose",
+  "family": "image_human_pose_estimation",
+  "parent": null,
+  "trainingDataset": "coco80",
+  "isTrainable": false,
+  "isPrivate": false,
+  "blueprint": [
+    "__init__.py",
+    "config.json",
+    "info.json",
+    "layers.py",
+    "model.py",
+    "README.md",
+    "rocket_builder.py",
+    "weights.pth",
+    "utils.py"
+  ],
+  "rocketRepoUrl": "https://gitlab.com/mirage-technologies/rockets/lightpose",
+  "paperUrl": "https://arxiv.org/abs/1811.12004",
+  "originRepoUrl": "https://github.com/Daniil-Osokin/lightweight-human-pose-estimation.pytorch",
+  "description": "Real-time 2D Multi-Person Pose Estimation"
+}

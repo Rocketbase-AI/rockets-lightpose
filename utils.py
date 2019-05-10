@@ -2,8 +2,8 @@ from __future__ import division
 import cv2
 import math
 import collections
+import operator
 import numpy as np
-from operator import itemgetter
 
 
 BODY_PARTS_KPT_IDS = [[1, 2], [1, 5], [2, 3], [3, 4], [5, 6], [6, 7], [1, 8], [8, 9], [9, 10], [1, 11],
@@ -54,7 +54,7 @@ def extract_keypoints(heatmap, all_keypoints, total_keypoint_num):
                     (heatmap_center > heatmap_down)
     heatmap_peaks = heatmap_peaks[1:heatmap_center.shape[0]-1, 1:heatmap_center.shape[1]-1]
     keypoints = list(zip(np.nonzero(heatmap_peaks)[1], np.nonzero(heatmap_peaks)[0]))  # (w, h)
-    keypoints = sorted(keypoints, key=itemgetter(0))
+    keypoints = sorted(keypoints, key=operator.itemgetter(0))
 
     suppressed = np.zeros(len(keypoints), np.uint8)
     keypoints_with_score_and_id = []
@@ -164,7 +164,7 @@ def group_keypoints(all_keypoints_by_type, pafs, pose_entry_size=20, min_paf_sco
                     score_all = ratio + kpts_a[i][2] + kpts_b[j][2]
                     connections.append([i, j, ratio, score_all])
         if len(connections) > 0:
-            connections = sorted(connections, key=itemgetter(2), reverse=True)
+            connections = sorted(connections, key=operator.itemgetter(2), reverse=True)
 
         num_connections = min(num_kpts_a, num_kpts_b)
         has_kpt_a = np.zeros(num_kpts_a, dtype=np.int32)

@@ -1,4 +1,5 @@
-from torch import nn
+import torch
+import torch.nn as nn
 
 
 def conv(in_channels, out_channels, kernel_size=3, padding=1, bn=True, dilation=1, stride=1, relu=True, bias=True):

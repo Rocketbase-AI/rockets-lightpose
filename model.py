@@ -1,19 +1,18 @@
+import layers
 import torch
-from torch import nn
-
-from .layers import conv, conv_dw, conv_dw_no_bn
+import torch.nn as nn
 
 
 class Cpm(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.align = conv(in_channels, out_channels, kernel_size=1, padding=0, bn=False)
+        self.align = layers.conv(in_channels, out_channels, kernel_size=1, padding=0, bn=False)
         self.trunk = nn.Sequential(
-            conv_dw_no_bn(out_channels, out_channels),
-            conv_dw_no_bn(out_channels, out_channels),
-            conv_dw_no_bn(out_channels, out_channels)
+            layers.conv_dw_no_bn(out_channels, out_channels),
+            layers.conv_dw_no_bn(out_channels, out_channels),
+            layers.conv_dw_no_bn(out_channels, out_channels)
         )
-        self.conv = conv(out_channels, out_channels, bn=False)
+        self.conv = layers.conv(out_channels, out_channels, bn=False)
 
     def forward(self, x):
         x = self.align(x)
@@ -25,17 +24,17 @@ class InitialStage(nn.Module):
     def __init__(self, num_channels, num_heatmaps, num_pafs):
         super().__init__()
         self.trunk = nn.Sequential(
-            conv(num_channels, num_channels, bn=False),
-            conv(num_channels, num_channels, bn=False),
-            conv(num_channels, num_channels, bn=False)
+            layers.conv(num_channels, num_channels, bn=False),
+            layers.conv(num_channels, num_channels, bn=False),
+            layers.conv(num_channels, num_channels, bn=False)
         )
         self.heatmaps = nn.Sequential(
-            conv(num_channels, 512, kernel_size=1, padding=0, bn=False),
-            conv(512, num_heatmaps, kernel_size=1, padding=0, bn=False, relu=False)
+            layers.conv(num_channels, 512, kernel_size=1, padding=0, bn=False),
+            layers.conv(512, num_heatmaps, kernel_size=1, padding=0, bn=False, relu=False)
         )
         self.pafs = nn.Sequential(
-            conv(num_channels, 512, kernel_size=1, padding=0, bn=False),
-            conv(512, num_pafs, kernel_size=1, padding=0, bn=False, relu=False)
+            layers.conv(num_channels, 512, kernel_size=1, padding=0, bn=False),
+            layers.conv(512, num_pafs, kernel_size=1, padding=0, bn=False, relu=False)
         )
 
     def forward(self, x):
@@ -48,10 +47,10 @@ class InitialStage(nn.Module):
 class RefinementStageBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.initial = conv(in_channels, out_channels, kernel_size=1, padding=0, bn=False)
+        self.initial = layers.conv(in_channels, out_channels, kernel_size=1, padding=0, bn=False)
         self.trunk = nn.Sequential(
-            conv(out_channels, out_channels),
-            conv(out_channels, out_channels, dilation=2, padding=2)
+            layers.conv(out_channels, out_channels),
+            layers.conv(out_channels, out_channels, dilation=2, padding=2)
         )
 
     def forward(self, x):
@@ -71,12 +70,12 @@ class RefinementStage(nn.Module):
             RefinementStageBlock(out_channels, out_channels)
         )
         self.heatmaps = nn.Sequential(
-            conv(out_channels, out_channels, kernel_size=1, padding=0, bn=False),
-            conv(out_channels, num_heatmaps, kernel_size=1, padding=0, bn=False, relu=False)
+            layers.conv(out_channels, out_channels, kernel_size=1, padding=0, bn=False),
+            layers.conv(out_channels, num_heatmaps, kernel_size=1, padding=0, bn=False, relu=False)
         )
         self.pafs = nn.Sequential(
-            conv(out_channels, out_channels, kernel_size=1, padding=0, bn=False),
-            conv(out_channels, num_pafs, kernel_size=1, padding=0, bn=False, relu=False)
+            layers.conv(out_channels, out_channels, kernel_size=1, padding=0, bn=False),
+            layers.conv(out_channels, num_pafs, kernel_size=1, padding=0, bn=False, relu=False)
         )
 
     def forward(self, x):
@@ -90,18 +89,18 @@ class PoseEstimationWithMobileNet(nn.Module):
     def __init__(self, num_refinement_stages=1, num_channels=128, num_heatmaps=19, num_pafs=38):
         super().__init__()
         self.model = nn.Sequential(
-            conv(     3,  32, stride=2, bias=False),
-            conv_dw( 32,  64),
-            conv_dw( 64, 128, stride=2),
-            conv_dw(128, 128),
-            conv_dw(128, 256, stride=2),
-            conv_dw(256, 256),
-            conv_dw(256, 512),  # conv4_2
-            conv_dw(512, 512, dilation=2, padding=2),
-            conv_dw(512, 512),
-            conv_dw(512, 512),
-            conv_dw(512, 512),
-            conv_dw(512, 512)   # conv5_5
+            layers.conv(     3,  32, stride=2, bias=False),
+            layers.conv_dw( 32,  64),
+            layers.conv_dw( 64, 128, stride=2),
+            layers.conv_dw(128, 128),
+            layers.conv_dw(128, 256, stride=2),
+            layers.conv_dw(256, 256),
+            layers.conv_dw(256, 512),  # conv4_2
+            layers.conv_dw(512, 512, dilation=2, padding=2),
+            layers.conv_dw(512, 512),
+            layers.conv_dw(512, 512),
+            layers.conv_dw(512, 512),
+            layers.conv_dw(512, 512)   # conv5_5
         )
         self.cpm = Cpm(512, num_channels)
 

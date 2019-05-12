@@ -8,8 +8,7 @@ should be in the layers.py file.
 import torch
 import torch.nn as nn
 
-import .layers
-
+from . import layers
 
 class PoseEstimationWithMobileNet(nn.Module):
     def __init__(self, num_refinement_stages=1, num_channels=128, num_heatmaps=19, num_pafs=38):

@@ -9,13 +9,14 @@
   "blueprint": [
     "__init__.py",
     "config.json",
+    "classes.json",
     "info.json",
     "layers.py",
     "model.py",
-    "README.md",
     "rocket_builder.py",
     "weights.pth",
-    "utils.py"
+    "utils.py",
+    "LICENSE"
   ],
   "rocketRepoUrl": "https://gitlab.com/mirage-technologies/rockets/lightpose",
   "paperUrl": "https://arxiv.org/abs/1811.12004",

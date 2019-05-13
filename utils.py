@@ -1,14 +1,23 @@
+from __future__ import division
 import cv2
 import math
 import collections
+import operator
 import numpy as np
-from operator import itemgetter
 
+BODY_PARTS_KPT_IDS = [
+    [1, 2], [1, 5], [2, 3], [3, 4], [5, 6],
+    [6, 7], [1, 8], [8, 9], [9, 10], [1, 11],
+    [11, 12], [12, 13], [1, 0], [0, 14], [14, 16],
+    [0, 15], [15, 17], [2, 16], [5, 17]
+]
 
-BODY_PARTS_KPT_IDS = [[1, 2], [1, 5], [2, 3], [3, 4], [5, 6], [6, 7], [1, 8], [8, 9], [9, 10], [1, 11],
-                      [11, 12], [12, 13], [1, 0], [0, 14], [14, 16], [0, 15], [15, 17], [2, 16], [5, 17]]
-BODY_PARTS_PAF_IDS = ([12, 13], [20, 21], [14, 15], [16, 17], [22, 23], [24, 25], [0, 1], [2, 3], [4, 5],
-                      [6, 7], [8, 9], [10, 11], [28, 29], [30, 31], [34, 35], [32, 33], [36, 37], [18, 19], [26, 27])
+BODY_PARTS_PAF_IDS = (
+    [12, 13], [20, 21], [14, 15], [16, 17], [22, 23],
+    [24, 25], [0, 1], [2, 3], [4, 5], [6, 7],
+    [8, 9], [10, 11], [28, 29], [30, 31], [34, 35],
+    [32, 33], [36, 37], [18, 19], [26, 27]
+)
 
 
 def normalize(img, img_mean, img_scale):
@@ -53,7 +62,7 @@ def extract_keypoints(heatmap, all_keypoints, total_keypoint_num):
                     (heatmap_center > heatmap_down)
     heatmap_peaks = heatmap_peaks[1:heatmap_center.shape[0]-1, 1:heatmap_center.shape[1]-1]
     keypoints = list(zip(np.nonzero(heatmap_peaks)[1], np.nonzero(heatmap_peaks)[0]))  # (w, h)
-    keypoints = sorted(keypoints, key=itemgetter(0))
+    keypoints = sorted(keypoints, key=operator.itemgetter(0))
 
     suppressed = np.zeros(len(keypoints), np.uint8)
     keypoints_with_score_and_id = []
@@ -163,7 +172,7 @@ def group_keypoints(all_keypoints_by_type, pafs, pose_entry_size=20, min_paf_sco
                     score_all = ratio + kpts_a[i][2] + kpts_b[j][2]
                     connections.append([i, j, ratio, score_all])
         if len(connections) > 0:
-            connections = sorted(connections, key=itemgetter(2), reverse=True)
+            connections = sorted(connections, key=operator.itemgetter(2), reverse=True)
 
         num_connections = min(num_kpts_a, num_kpts_b)
         has_kpt_a = np.zeros(num_kpts_a, dtype=np.int32)

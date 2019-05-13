@@ -1,7 +1,0 @@
-torch==0.4.1
-torchvision==0.2.1
-cython
-opencv-python==3.4.5.20
-numpy>=1.14.5
-pycocotools
-matplotlib

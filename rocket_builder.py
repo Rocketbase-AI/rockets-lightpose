@@ -1,45 +1,62 @@
-import os
-import cv2
-import torch
-import types
+""" Function to create the Rocket
+
+The rocket_builder.py file contains the build function to
+build the Rocket. Moreover, it contains the preprocess
+and postprocess functions that will be added to the model.
+"""
+from __future__ import division
 import json
+import types
+import os
+
+import cv2
 import numpy as np
-import torch.nn as nn
-from PIL import Image
+import PIL
 from PIL import ImageDraw
-from torchvision import transforms
-from .model import PoseEstimationWithMobileNet
-from .utils import normalize, pad_width, load_state, extract_keypoints, group_keypoints, BODY_PARTS_KPT_IDS, BODY_PARTS_PAF_IDS
+import torch
+import torch.nn as nn
+
+from . import utils
+from . import model as lightpose
 
 
 def build(config_path: str = '') -> nn.Module:
     """Builds a pytorch compatible deep learning model
 
     The model can be used as any other pytorch model. Additional methods
-    for `preprocessing`, `postprocessing`, `label_to_class` have been added to ease handling of the model
+    for `preprocessing`, `postprocessing` have been added to ease the handling of the model
     and simplify interchangeability of different models.
     """
     # Load Config file
-    if not config_path: # If no config path then load default one
-        config_path = os.path.join(os.path.realpath(os.path.dirname(__file__)), "config.json")
+    if not config_path:  # If no config path then load default one
+        config_path = os.path.join(os.path.realpath(
+            os.path.dirname(__file__)), "config.json")
 
-    with open(config_path, 'r') as f:
-        config = json.load(f)
+    with open(config_path, 'r') as json_file:
+        config = json.load(json_file)
+
+    # Load Classes
+    classes_path = os.path.join(os.path.realpath(
+        os.path.dirname(__file__)), config['classes_path'])
+    with open(classes_path, 'r') as json_file:
+        classes = json.load(json_file)
 
     # Set up model
-    model = PoseEstimationWithMobileNet()
-    weights_path = os.path.join(os.path.realpath(os.path.dirname(__file__)), config['weights_path'])
+    model = lightpose.PoseEstimationWithMobileNet()
+    weights_path = os.path.join(os.path.realpath(
+        os.path.dirname(__file__)), config['weights_path'])
     checkpoint = torch.load(weights_path, map_location='cpu')
-    load_state(model, checkpoint)
+    utils.load_state(model, checkpoint)
 
-    
     model.postprocess = types.MethodType(postprocess, model)
     model.preprocess = types.MethodType(preprocess, model)
+    setattr(model, 'config', config)
+    setattr(model, 'classes', classes)
 
     return model
 
 
-def preprocess(self, img: Image) -> torch.Tensor:
+def preprocess(self, img: PIL.Image.Image) -> torch.Tensor:
     """Converts PIL Image or Array into pytorch tensor specific to this model
 
     Handles all the necessary steps for preprocessing such as resizing, normalization.
@@ -51,39 +68,55 @@ def preprocess(self, img: Image) -> torch.Tensor:
         img (PIL.Image): input image
         labels (list): list of bounding boxes and class labels
     """
-    if type(img) == Image.Image:
-        # PIL.Image
-        # Extract image
-        img = np.array(img)
-    elif type(img) == torch.Tensor:
-        # list of tensors
-        img = img[0].cpu()
-        img = transforms.ToPILImage()(img)
-        img = np.array(img)
-    elif "PIL" in str(type(img)): # type if file just has been opened
-        img = np.array(img.convert("RGB"))
-    else:
-        raise TypeError("wrong input type: got {} but expected list of PIL.Image, "
-                        "single PIL.Image or torch.Tensor".format(type(img)))
-    pad_value=(0, 0, 0)
-    img_mean=(128, 128, 128)
-    img_scale=1/256
-    net_input_height_size = 256
-    stride = 8
+    # Test if the input is a PIL image
+    if not isinstance(img, PIL.Image.Image):
+        raise TypeError(
+            'wrong input type: got {} but expected PIL.Image.Image.'.format(type(img)))
+
+    # Load the parameters from config.json
+    stride = self.config['stride']
+    pad_value = tuple(self.config['pad_color_RGB'])
+    img_mean = tuple(self.config['mean_RGB'])
+    img_scale = 1.0 / 255 # Typo in the initial repo was 1/256
+    net_input_height_size = self.config['input_size'][0]
+
+    # Conver the PIL image to a numpy array
     np_img = np.array(img)
+
+    # Converting the image from RGB to BGR
     img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
-    height, width, _ = img.shape
+
+    # Scale the input image
+    height, _, _ = img.shape
     scale = net_input_height_size / height
+    scaled_img = cv2.resize(img, (0, 0), fx=scale,
+                            fy=scale, interpolation=cv2.INTER_CUBIC)
 
-    scaled_img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    scaled_img = normalize(scaled_img, img_mean, img_scale)
-    min_dims = [net_input_height_size, max(scaled_img.shape[1], net_input_height_size)]
-    padded_img, pad = pad_width(scaled_img, stride, pad_value, min_dims)
+    # Normalize the input image
+    normalized_img = utils.normalize(
+        scaled_img,
+        img_mean,
+        img_scale
+    )
 
-    return torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float()
+    # Pad the input image
+    min_dims = [net_input_height_size, max(
+        normalized_img.shape[1], net_input_height_size)]
+
+    padded_img, _ = utils.pad_width(
+        normalized_img,
+        stride,
+        pad_value,
+        min_dims
+    )
+
+    # Convert numpy to tensor + final modification
+    out_tensor = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float()
+
+    return out_tensor
 
 
-def postprocess(self, pose_output: torch.Tensor, input_img: Image, visualize: bool = False):
+def postprocess(self, pose_output: torch.Tensor, input_img: PIL.Image, visualize: bool = False):
     """Converts pytorch tensor into interpretable format
 
     Handles all the steps for postprocessing of the raw output of the model.
@@ -97,58 +130,137 @@ def postprocess(self, pose_output: torch.Tensor, input_img: Image, visualize: bo
         input_img (PIL.Image): Original input image which has not been preprocessed yet
         visualize (bool): If True outputs image with annotations else a list of bounding boxes
     """
-    net_input_height_size = 256
-    pad_value=(0, 0, 0)
-    img_mean=(128, 128, 128)
-    img_scale=1/256
-    stride = 8
-    upsample_ratio = 4
-    color = [0, 224, 255]
+    # Test if the input is a PIL image
+    if not isinstance(input_img, PIL.Image.Image):
+        raise TypeError(
+            'wrong input type: got {} but expected PIL.Image.Image.'.format(type(input_img)))
+
+    # Load parameters from config.json
+    stride = self.config['stride']
+    upsample_ratio = self.config['upsample_ratio']
+    pad_value = tuple(self.config['pad_color_RGB'])
+    img_mean = tuple(self.config['mean_RGB'])
+    img_scale = 1.0 / 255
+    net_input_height_size = self.config['input_size'][0]
+
+    # Convert PIL image to numpy array
     np_img = np.array(input_img)
     img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
-    height, width, _ = img.shape
+
+    height, _, _ = img.shape
     scale = net_input_height_size / height
-    scaled_img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    scaled_img = normalize(scaled_img, img_mean, img_scale)
-    min_dims = [net_input_height_size, max(scaled_img.shape[1], net_input_height_size)]
-    padded_img, pad = pad_width(scaled_img, stride, pad_value, min_dims)
+    scaled_img = cv2.resize(img, (0, 0), fx=scale,
+                            fy=scale, interpolation=cv2.INTER_CUBIC)
+    scaled_img = utils.normalize(scaled_img, img_mean, img_scale)
+    min_dims = [net_input_height_size, max(
+        scaled_img.shape[1], net_input_height_size)]
+    _, pad = utils.pad_width(scaled_img, stride, pad_value, min_dims)
 
+    # Extract the keypoint heatmaps (heatmaps)
     stage2_heatmaps = pose_output[-2]
-    heatmaps = np.transpose(stage2_heatmaps.squeeze().cpu().data.numpy(), (1, 2, 0))
-    heatmaps = cv2.resize(heatmaps, (0, 0), fx=upsample_ratio, fy=upsample_ratio, interpolation=cv2.INTER_CUBIC)
+    heatmaps = np.transpose(
+        stage2_heatmaps.squeeze().cpu().data.numpy(), (1, 2, 0))
+    heatmaps = cv2.resize(heatmaps, (0, 0), fx=upsample_ratio,
+                          fy=upsample_ratio, interpolation=cv2.INTER_CUBIC)
 
+    # Extract the Part Affinity Fields (pafs)
     stage2_pafs = pose_output[-1]
     pafs = np.transpose(stage2_pafs.squeeze().cpu().data.numpy(), (1, 2, 0))
-    pafs = cv2.resize(pafs, (0, 0), fx=upsample_ratio, fy=upsample_ratio, interpolation=cv2.INTER_CUBIC)
-    
-    if visualize:
-      orig_img = img.copy()
-      total_keypoints_num = 0
-      all_keypoints_by_type = []
-      for kpt_idx in range(18):  # 19th for bg
-          total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type, total_keypoints_num)
+    pafs = cv2.resize(pafs, (0, 0), fx=upsample_ratio,
+                      fy=upsample_ratio, interpolation=cv2.INTER_CUBIC)
 
-      pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs, demo=True)
-      for kpt_id in range(all_keypoints.shape[0]):
-          all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
-          all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
-      for n in range(len(pose_entries)):
-          if len(pose_entries[n]) == 0:
-              continue
-          for part_id in range(len(BODY_PARTS_PAF_IDS) - 2):
-              kpt_a_id = BODY_PARTS_KPT_IDS[part_id][0]
-              global_kpt_a_id = pose_entries[n][kpt_a_id]
-              if global_kpt_a_id != -1:
-                  x_a, y_a = all_keypoints[int(global_kpt_a_id), 0:2]
-                  cv2.circle(img, (int(x_a), int(y_a)), 3, color, -1)
-              kpt_b_id = BODY_PARTS_KPT_IDS[part_id][1]
-              global_kpt_b_id = pose_entries[n][kpt_b_id]
-              if global_kpt_b_id != -1:
-                  x_b, y_b = all_keypoints[int(global_kpt_b_id), 0:2]
-                  cv2.circle(img, (int(x_b), int(y_b)), 3, color, -1)
-              if global_kpt_a_id != -1 and global_kpt_b_id != -1:
-                  cv2.line(img, (int(x_a), int(y_a)), (int(x_b), int(y_b)), color, 2)
-      img = cv2.addWeighted(orig_img, 0.6, img, 0.4, 0)
-      cv2_im = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
-      return Image.fromarray(cv2_im)
-    return pafs
+    # Extract the keypoints
+    total_keypoints_num = 0
+    all_keypoints_by_type = []
+    for kpt_idx in range(18):  # 19th for bg
+        total_keypoints_num += utils.extract_keypoints(
+            heatmaps[:, :, kpt_idx], all_keypoints_by_type, total_keypoints_num)
+
+    # Group the keypoints
+    pose_entries, all_keypoints = utils.group_keypoints(
+        all_keypoints_by_type, pafs, demo=True)
+
+    # Convert the position of the keypoints to the original image
+    for kpt in all_keypoints:
+        kpt[0] = (kpt[0] * stride / upsample_ratio - pad[1]) / scale
+        kpt[1] = (kpt[1] * stride / upsample_ratio - pad[0]) / scale
+
+    # Convert the list of keypoints to a list of dictionary:
+    # [
+    #   {"name_kpt":
+    #       {"x": x_pos, "y": y_pos, "confidence": confidence_score},
+    #   ...},
+    # ...]
+
+    list_humans_poses = []
+    for human in pose_entries:
+        human_pose = {}
+        for kpt_id, kpt_location in enumerate(human[:-2]):
+            if not kpt_location == -1:
+                kpt_info = all_keypoints[int(kpt_location)]
+                kpt_name = self.classes[str(int(kpt_id))]
+                x_pos = kpt_info[0]
+                y_pos = kpt_info[1]
+                confidence_score = kpt_info[2]
+                human_pose[kpt_name] = {
+                    'x': x_pos,
+                    'y': y_pos,
+                    'confidence': confidence_score
+                }
+        list_humans_poses.append(human_pose)
+
+    if visualize:
+        # Visualization parameters
+        line_width = 2
+        line_color = (0, 225, 225, 255)
+        point_radius = 4
+        point_color = (255, 255, 255, 255)
+
+        # Initialize the context to draw on the image
+        img_out = input_img.copy()
+        ctx = ImageDraw.Draw(img_out, 'RGBA')
+        # Draw the skeleton of each human in the picture
+        for human in list_humans_poses:
+            # Draw every connection defined in classes.json
+            for connection in self.classes['connections']:
+                # Test if both keypoints have been found
+                human_has_kpt_a = connection[0] in human.keys()
+                human_has_kpt_b = connection[1] in human.keys()
+                if human_has_kpt_a and human_has_kpt_b:
+                    # Get the coordinates of the two keypoints
+                    kpt_a_x = int(round(human[connection[0]]['x']))
+                    kpt_a_y = int(round(human[connection[0]]['y']))
+                    kpt_b_x = int(round(human[connection[1]]['x']))
+                    kpt_b_y = int(round(human[connection[1]]['y']))
+
+                    # Draw the line between the two keypoints
+                    ctx.line(
+                        [(kpt_a_x, kpt_a_y), (kpt_b_x, kpt_b_y)],
+                        fill=line_color,
+                        width=line_width,
+                        joint=None)
+
+            # Draw Keypoints
+            for _, item in human.items():
+                # Create bounding box of the point
+                top_left = (
+                    int(round(item['x'] - point_radius)),
+                    int(round(item['y'] - point_radius))
+                )
+                bottom_right = (
+                    int(round(item['x'] + point_radius)),
+                    int(round(item['y'] + point_radius))
+                )
+
+                # Draw the point at the keypoint position
+                ctx.ellipse(
+                    [top_left, bottom_right],
+                    fill=point_color,
+                    outline=None,
+                    width=0
+                )
+
+        del ctx
+        return img_out
+
+    return list_humans_poses

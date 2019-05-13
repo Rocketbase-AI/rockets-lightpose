@@ -1,4 +1,9 @@
 {
+  "classes_path": "classes.json",
   "weights_path": "weights.pth",
-  "input_size": [256, 256, 3]
+  "input_size": [256, 256, 3],
+  "stride": 8,
+  "upsample_ratio": 4,
+  "mean_RGB": [128, 128, 128],
+  "pad_color_RGB": [0, 0, 0]
 }

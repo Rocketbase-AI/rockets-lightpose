@@ -4,6 +4,7 @@ The rocket_builder.py file contains the build function to
 build the Rocket. Moreover, it contains the preprocess
 and postprocess functions that will be added to the model.
 """
+from __future__ import division
 import json
 import types
 import os

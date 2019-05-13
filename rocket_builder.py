@@ -56,125 +56,48 @@ def preprocess(self, img: PIL.Image.Image) -> torch.Tensor:
         img (PIL.Image): input image
         labels (list): list of bounding boxes and class labels
     """
-    start = time.time()
     if not isinstance(img, PIL.Image.Image):
         raise TypeError(
             'wrong input type: got {} but expected PIL.Image.Image.'.format(type(img)))
 
-    originalMethod = False
+    stride = self.config['stride']
+    pad_value = tuple(self.config['pad_color_RGB'])
+    img_mean = tuple(self.config['mean_RGB'])
+    img_scale = 1.0 / 255 # Typo in the initial repo was 1/256
+    net_input_height_size = self.config['input_size'][0]
 
-    if originalMethod:
-        img = np.array(img)
+    # Conver the PIL image to a numpy array
+    np_img = np.array(img)
 
-        stride = self.config['stride']
-        pad_value = tuple(self.config['pad_color_RGB'])
-        img_mean = tuple(self.config['mean_RGB'])
-        img_scale = 1.0 / self.config['input_size'][0]
-        net_input_height_size = self.config['input_size'][0]
+    # Converting the image from RGB to BGR
+    img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
 
-        np_img = np.array(img)
-        # Converting the image from RGB to BGR
+    # Scale the input image
+    height, width, _ = img.shape
+    scale = net_input_height_size / height
+    scaled_img = cv2.resize(img, (0, 0), fx=scale,
+                            fy=scale, interpolation=cv2.INTER_CUBIC)
 
-        img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
+    # Normalize the input image
+    normalized_img = utils.normalize(
+                        scaled_img,
+                        img_mean,
+                        img_scale
+                    )
 
-        # Scale the input image
-        height, width, _ = img.shape
-        scale = net_input_height_size / height
-        scaled_img = cv2.resize(img, (0, 0), fx=scale,
-                                fy=scale, interpolation=cv2.INTER_CUBIC)
-
-        # Normalize the input image
-        scaled_img = utils.normalize(
-                            scaled_img,
-                            img_mean,
-                            img_scale
+    # Pad the input image
+    min_dims = [net_input_height_size, max(
+        normalized_img.shape[1], net_input_height_size)]
+    
+    padded_img, _ = utils.pad_width(
+                            normalized_img,
+                            stride,
+                            pad_value,
+                            min_dims
                         )
 
-        # Pad the input image
-        min_dims = [net_input_height_size, max(
-            scaled_img.shape[1], net_input_height_size)]
-        
-        padded_img, pad = utils.pad_width(
-                                scaled_img,
-                                stride,
-                                pad_value,
-                                min_dims
-                            )
+    out_tensor = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float()
 
-        out_tensor = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float()
-    else:
-        # Initialize list of transformations necessary for the preprocessing
-        list_transformations = []
-
-        # ---RESIZE---
-        # Resize the image with the height to the input size
-        scale = self.config['input_size'][0] / img.size[1]
-        new_h = self.config['input_size'][0]
-        new_w = int(round(img.size[0] * scale))
-
-        list_transformations.append(
-            torchvision.transforms.Resize(
-                (new_h, new_w),
-                PIL.Image.BICUBIC
-            )
-        )
-
-        # --- PADDING ---
-        # Get optimal width
-        optimal_width = max(new_w, self.config['input_size'][1])
-
-        # Compute the padding for the width to be a multiple of the stride
-        optimal_width = math.ceil(optimal_width / self.config['stride']) * self.config['stride']
-
-        pad_left = int(math.floor((optimal_width - new_w) / 2.0))
-        pad_right = int(optimal_width - new_w - pad_left)
-        # No padding for the top and bottom
-        pad_top = 0
-        pad_bottom = 0
-
-        list_transformations.append(
-            torchvision.transforms.Pad(
-                padding=(pad_left, pad_top, pad_right, pad_bottom),
-                fill=tuple(self.config['pad_color_RGB']),
-                padding_mode='constant'
-            )
-        )
-
-        # ---CONVERT TO TENSOR---
-        list_transformations.append(
-            torchvision.transforms.ToTensor()
-        )
-
-        # ---NORMALIZE---
-        # Load the mean color to normalize the images
-        mean_rgb = tuple(self.config['mean_RGB'])
-        if max(mean_rgb) > 1: # convert on
-            mean_rgb = [v / 255 for v in mean_rgb]
-
-        list_transformations.append(
-            torchvision.transforms.Normalize(
-                mean_rgb,
-                (1.0, 1.0, 1.0)
-            )
-        )
-
-        # --- RGB TO BGR ---
-        list_transformations.append(
-            torchvision.transforms.Lambda(
-                lambda x: x[[2, 1, 0], : ,:]
-            )
-        )
-
-        # ---APPLY TRANSFORMS ---
-        transform_input = torchvision.transforms.Compose(
-            list_transformations
-        )
-        # Apply transformations
-        out_tensor = transform_input(img)
-        # Add the batch size dimension
-        out_tensor = out_tensor.unsqueeze(0)
-
-    print(time.time() - start)
     return out_tensor
 
 
